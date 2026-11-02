@@ -59,6 +59,12 @@ prices rather than adding duplicate rows. Prices use `DECIMAL(10,2)`.
 The job reads from the beginning of the Kafka topic on its first creation, so
 messages produced before the consumer starts are included.
 
+Running the demo also resumes its paused `products.kafka_fruit` job once all
+services are ready. Doris can pause the job while containers restart. Resuming
+retains its saved Kafka offsets; it does not recreate the job or reset the topic.
+The script makes one resume attempt, so persistent ingestion errors still need
+to be investigated. To leave a job paused, start only the services instead.
+
 To start just the services:
 
 ```bash

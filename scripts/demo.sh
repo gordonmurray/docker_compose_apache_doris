@@ -16,6 +16,10 @@ state=$(awk -F '\t' 'NR == 1 {for (i = 1; i <= NF; i++) col[$i] = i; next}
 case "$state" in
   "") sql < "$project_dir/sql/routine-load.sql" ;;
   RUNNING|NEED_SCHEDULE) ;;
+  PAUSED)
+    echo "Resuming paused demo job products.kafka_fruit after services are ready."
+    sql -e 'RESUME ROUTINE LOAD FOR products.kafka_fruit;'
+    ;;
   *)
     echo "Routine Load is $state. Inspect SHOW ROUTINE LOAD FOR products.kafka_fruit before resuming or resetting." >&2
     diagnostics

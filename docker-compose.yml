@@ -9,8 +9,7 @@ services:
       FE_SERVERS: fe1:${DORIS_NETWORK_PREFIX:-172.20.80}.2:9010
       FE_ID: "1"
       DORIS_JAVA_HEAP: 2g
-    # Keep Kafka available until Doris has stopped, so Routine Load is not paused
-    # by a broker disappearing during a normal shutdown.
+    # Keep the broker available while Doris starts and stops.
     depends_on:
       kafka:
         condition: service_healthy
