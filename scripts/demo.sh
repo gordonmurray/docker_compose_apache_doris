@@ -10,14 +10,14 @@ compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
 
 sed "s/\${REPLICATION_NUM}/$replicas/g" "$project_dir/sql/schema.sql" | sql
 # SHOW ROUTINE LOAD omits stopped jobs. Reuse an active job on repeated runs.
-jobs=$(sql --column-names -e 'SHOW ROUTINE LOAD FROM products;')
+jobs=$(sql --database=products --column-names -e 'SHOW ROUTINE LOAD;')
 state=$(awk -F '\t' 'NR == 1 {for (i = 1; i <= NF; i++) col[$i] = i; next}
   col["Name"] && col["State"] && $(col["Name"]) == "kafka_fruit" {print $(col["State"])}' <<< "$jobs")
 case "$state" in
   "") sql < "$project_dir/sql/routine-load.sql" ;;
   RUNNING|NEED_SCHEDULE) ;;
   *)
-    echo "Routine Load is $state. Inspect SHOW ROUTINE LOAD FROM products before resuming or resetting." >&2
+    echo "Routine Load is $state. Inspect SHOW ROUTINE LOAD FOR products.kafka_fruit before resuming or resetting." >&2
     diagnostics
     exit 1
     ;;

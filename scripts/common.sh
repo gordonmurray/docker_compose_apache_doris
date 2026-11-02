@@ -31,7 +31,7 @@ produce() {
 }
 diagnostics() {
   compose ps >&2 || true
-  sql -e 'SHOW FRONTENDS; SHOW BACKENDS; SHOW ROUTINE LOAD FROM products;' >&2 || true
+  sql -e 'SHOW FRONTENDS; SHOW BACKENDS; USE products; SHOW ROUTINE LOAD;' >&2 || true
 }
 wait_for_count() {
   local query=$1 expected=$2 timeout=${3:-180} actual deadline=$((SECONDS + ${3:-180}))

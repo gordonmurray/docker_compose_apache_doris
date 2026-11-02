@@ -1,5 +1,5 @@
 CREATE ROUTINE LOAD products.kafka_fruit ON kafka_table
-COLUMNS TERMINATED BY ","
+COLUMNS TERMINATED BY ",",
 COLUMNS (fruit, price)
 PROPERTIES (
     "desired_concurrent_number" = "1",

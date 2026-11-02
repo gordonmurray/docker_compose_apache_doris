@@ -91,7 +91,7 @@ Try these queries:
 SHOW FRONTENDS;
 SHOW BACKENDS;
 SELECT * FROM products.kafka_table ORDER BY fruit;
-SHOW ROUTINE LOAD FROM products;
+SHOW ROUTINE LOAD FOR products.kafka_fruit;
 ```
 
 Send another message, then query again after a few seconds:
@@ -197,7 +197,7 @@ if it needs to be retained.
   fails. Check the host's `vm.max_map_count`, available memory and AVX2 support.
 - FE and BE logs are also inside their containers under
   `/opt/apache-doris/fe/log` and `/opt/apache-doris/be/log`.
-- If Routine Load pauses, inspect `SHOW ROUTINE LOAD FROM products;` for its
+- If Routine Load pauses, inspect `SHOW ROUTINE LOAD FOR products.kafka_fruit;` for its
   reason, fix the cause, then use `RESUME ROUTINE LOAD FOR products.kafka_fruit;`.
 - A timeout can be rerun after fixing the underlying problem. The scripts leave
   containers and data in place for inspection; they never reset volumes for you.
