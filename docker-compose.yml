@@ -1,131 +1,108 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-version: '3'
+name: trying-apache-doris
+
 services:
-  docker-fe-01:
-    image: "apache/doris:2.0.0_alpha-fe-x86_64"
-    container_name: "doris-fe-01"
-    hostname: "fe-01"
+  fe:
+    image: apache/doris:fe-${DORIS_VERSION:-4.0.8}
+    hostname: fe
+    entrypoint: [bash, /demo/scripts/start-doris.sh, fe]
     environment:
-      - FE_SERVERS=fe1:172.20.80.2:9010,fe2:172.20.80.3:9010,fe3:172.20.80.4:9010
-      - FE_ID=1
+      FE_SERVERS: fe1:${DORIS_NETWORK_PREFIX:-172.20.80}.2:9010
+      FE_ID: "1"
+      DORIS_JAVA_HEAP: 2g
     ports:
-      - 8031:8030
-      - 9031:9030
+      - "127.0.0.1:${DORIS_HTTP_PORT:-8030}:8030"
+      - "127.0.0.1:${DORIS_SQL_PORT:-9030}:9030"
     volumes:
-      - /data/fe-01/doris-meta:/opt/apache-doris/fe/doris-meta
-      - /data/fe-01/log:/opt/apache-doris/fe/log
+      - fe-meta:/opt/apache-doris/fe/doris-meta
+      - fe-log:/opt/apache-doris/fe/log
+      - ./fe/conf/fe.conf:/demo/fe.conf:ro
+      - ./scripts:/demo/scripts:ro
     networks:
-      doris_net:
-        ipv4_address: 172.20.80.2
-  docker-fe-02:
-    image: "apache/doris:2.0.0_alpha-fe-x86_64"
-    container_name: "doris-fe-02"
-    hostname: "fe-02"
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.2
+    healthcheck:
+      test: [CMD, mysql, --protocol=TCP, -h127.0.0.1, -P9030, -uroot, --connect-timeout=5, -e, "SELECT 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 30s
+    mem_limit: 3g
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    stop_grace_period: 60s
+
+  be:
+    image: apache/doris:be-${DORIS_VERSION:-4.0.8}
+    hostname: be
+    entrypoint: [bash, /demo/scripts/start-doris.sh, be]
     environment:
-      - FE_SERVERS=fe1:172.20.80.2:9010,fe2:172.20.80.3:9010,fe3:172.20.80.4:9010
-      - FE_ID=2
-    ports:
-      - 8032:8030
-      - 9032:9030
-    volumes:
-      - /data/fe-02/doris-meta:/opt/apache-doris/fe/doris-meta
-      - /data/fe-02/log:/opt/apache-doris/fe/log
-    networks:
-      doris_net:
-        ipv4_address: 172.20.80.3
-  docker-fe-03:
-    image: "apache/doris:2.0.0_alpha-fe-x86_64"
-    container_name: "doris-fe-03"
-    hostname: "fe-03"
-    environment:
-      - FE_SERVERS=fe1:172.20.80.2:9010,fe2:172.20.80.3:9010,fe3:172.20.80.4:9010
-      - FE_ID=3
-    ports:
-      - 8033:8030
-      - 9033:9030
-    volumes:
-      - /data/fe-03/doris-meta:/opt/apache-doris/fe/doris-meta
-      - /data/fe-03/log:/opt/apache-doris/fe/log
-    networks:
-      doris_net:
-        ipv4_address: 172.20.80.4
-  docker-be-01:
-    image: "apache/doris:2.0.0_alpha-be-x86_64"
-    container_name: "doris-be-01"
-    hostname: "be-01"
+      FE_SERVERS: fe1:${DORIS_NETWORK_PREFIX:-172.20.80}.2:9010
+      BE_ADDR: ${DORIS_NETWORK_PREFIX:-172.20.80}.5:9050
+      DORIS_JAVA_HEAP: 512m
     depends_on:
-      - docker-fe-01
-      - docker-fe-02
-      - docker-fe-03
-    environment:
-      - FE_SERVERS=fe1:172.20.80.2:9010,fe2:172.20.80.3:9010,fe3:172.20.80.4:9010
-      - BE_ADDR=172.20.80.5:9050
-    ports:
-      - 8041:8040
+      fe:
+        condition: service_healthy
     volumes:
-      - /data/be-01/storage:/opt/apache-doris/be/storage
-      - /data/be-01/script:/docker-entrypoint-initdb.d
-      - /data/be-01/log:/opt/apache-doris/be/log
+      - be-storage:/opt/apache-doris/be/storage
+      - be-log:/opt/apache-doris/be/log
+      - ./be/conf/be.conf:/demo/be.conf:ro
+      - ./scripts:/demo/scripts:ro
     networks:
-      doris_net:
-        ipv4_address: 172.20.80.5
-  docker-be-02:
-    image: "apache/doris:2.0.0_alpha-be-x86_64"
-    container_name: "doris-be-02"
-    hostname: "be-02"
-    depends_on:
-      - docker-fe-01
-      - docker-fe-02
-      - docker-fe-03
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.5
+    healthcheck:
+      test: [CMD, bash, /demo/scripts/check-backend.sh]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 30s
+    mem_limit: 3g
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    stop_grace_period: 60s
+
+  kafka:
+    image: apache/kafka:${KAFKA_VERSION:-4.1.2}
+    hostname: kafka
     environment:
-      - FE_SERVERS=fe1:172.20.80.2:9010,fe2:172.20.80.3:9010,fe3:172.20.80.4:9010
-      - BE_ADDR=172.20.80.6:9050
-    ports:
-      - 8042:8040
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
     volumes:
-      - /data/be-02/storage:/opt/apache-doris/be/storage
-      - /data/be-02/script:/docker-entrypoint-initdb.d
-      - /data/be-02/log:/opt/apache-doris/be/log
-    networks:
-      doris_net:
-        ipv4_address: 172.20.80.6
-  docker-be-03:
-    image: "apache/doris:2.0.0_alpha-be-x86_64"
-    container_name: "doris-be-03"
-    hostname: "be-03"
-    depends_on:
-      - docker-fe-01
-      - docker-fe-02
-      - docker-fe-03
-    environment:
-      - FE_SERVERS=fe1:172.20.80.2:9010,fe2:172.20.80.3:9010,fe3:172.20.80.4:9010
-      - BE_ADDR=172.20.80.7:9050
-    ports:
-      - 8043:8040
-    volumes:
-      - /data/be-03/storage:/opt/apache-doris/be/storage
-      - /data/be-03/script:/docker-entrypoint-initdb.d
-      - /data/be-03/log:/opt/apache-doris/be/log
-    networks:
-      doris_net:
-        ipv4_address: 172.20.80.7
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: [CMD, /opt/kafka/bin/kafka-topics.sh, --bootstrap-server, kafka:9092, --list]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    mem_limit: 1g
+    stop_grace_period: 30s
+
 networks:
-  doris_net:
+  default:
     ipam:
       config:
-        - subnet: 172.20.80.0/24
+        - subnet: ${DORIS_NETWORK_PREFIX:-172.20.80}.0/24
+
+volumes:
+  fe-meta:
+  fe-log:
+  be-storage:
+  be-log:
+  kafka-data:

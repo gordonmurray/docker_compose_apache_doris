@@ -1,0 +1,51 @@
+name: Demo checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate both Compose configurations
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.cluster.yml config --quiet
+      - name: Check shell scripts
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          shellcheck -x -P scripts scripts/*.sh
+
+  smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare host
+        run: sudo sysctl -w vm.max_map_count=2000000
+      - name: Verify Kafka ingestion
+        run: ./scripts/smoke-test.sh
+      - name: Verify persistence and repeatability after recreating containers
+        run: |
+          docker compose down
+          docker compose up -d --wait --wait-timeout 300
+          docker compose exec -T fe mysql -h127.0.0.1 -P9030 -uroot -BN \
+            -e 'SELECT COUNT(*) FROM products.kafka_table' | grep -x 3
+          ./scripts/smoke-test.sh
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose ps --all
+          docker compose logs --no-color --tail=150
+          docker compose exec -T fe bash -c 'tail -n 150 /opt/apache-doris/fe/log/fe.log' || true
+          docker compose exec -T be bash -c 'tail -n 150 /opt/apache-doris/be/log/be.INFO' || true
+      - name: Clean up
+        if: always()
+        run: docker compose down --volumes
