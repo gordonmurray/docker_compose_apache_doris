@@ -21,7 +21,8 @@ services:
       default:
         ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.2
     healthcheck:
-      test: [CMD, mysql, --protocol=TCP, -h127.0.0.1, -P9030, -uroot, --connect-timeout=5, -e, "SELECT 1"]
+      # SHOW is served by the frontend before a backend has registered.
+      test: [CMD, mysql, --protocol=TCP, -h127.0.0.1, -P9030, -uroot, --connect-timeout=5, -e, "SHOW FRONTENDS"]
       interval: 5s
       timeout: 10s
       retries: 60
