@@ -1,25 +1,20 @@
-# Trying out Apache Doris
+# Apache Doris with Docker Compose
 
-![Static Badge](https://img.shields.io/badge/Just_testing-Not_production_ready-red)
+Run Apache Doris locally and stream data from Kafka into a table you can query
+with SQL. The default setup uses one frontend, one backend and one Kafka broker.
+An optional configuration provides three frontends and three backends.
 
-A small Docker Compose project for trying Apache Doris and streaming data from
-Kafka. Originally put together in 2023 after reading
-[Empowering cyber security by enabling seven times faster log analysis](https://doris.apache.org/blog/empowering-cyber-security-by-enabling-seven-times-faster-log-analysis).
-
-Updated to **Doris 4.0.8**, the release labelled Stable on the
-[Apache Doris download page](https://doris.apache.org/download/) when this refresh
-was made. The images are pinned to that version, rather than a moving `latest` tag.
-Kafka uses the official `apache/kafka:4.1.2` image in KRaft mode, without ZooKeeper.
+Images are pinned to **Doris 4.0.8** and **Kafka 4.1.2**. Kafka runs in KRaft mode,
+without ZooKeeper.
 
 ## Requirements
 
 - Docker Engine or Docker Desktop with **Docker Compose v2.24.4 or newer**.
-- Bash. A local MySQL client is optional; the scripts use the one in the FE image.
-- For the default demo, allow at least **8 GiB of memory for Docker**, preferably
-  more, and enough disk space for the images and data. The configured container
-  memory limits total 7 GiB. The larger cluster's limits total 19 GiB.
-- The official Doris images provide AMD64 and ARM64 builds. An AMD64 CPU needs
-  AVX2 support. Use a native image for your machine.
+- Git and Bash. The frontend image includes a MySQL client.
+- At least **8 GiB of memory available to Docker** for the default setup,
+  preferably more, plus space for the images and data. Container memory limits
+  total 7 GiB for the default setup and 19 GiB for the larger cluster.
+- AMD64 with AVX2 support, or ARM64. Use the native image for your machine.
 
 On a Linux Docker host, raise the memory mapping limit before starting:
 
@@ -34,19 +29,27 @@ printf 'vm.max_map_count=2000000\n' | sudo tee /etc/sysctl.d/99-doris.conf
 sudo sysctl --system
 ```
 
-With Docker Desktop, the setting applies inside its Linux VM. If startup reports
-that the limit is too low, configure it there rather than on the macOS or Windows
-host. Consult the [Doris deployment guide](https://doris.apache.org/docs/4.x/getting-started/quick-start/).
+With Docker Desktop, this setting applies inside its Linux VM. If startup reports
+a low limit, configure it there. See the
+[Doris deployment guide](https://doris.apache.org/docs/4.x/getting-started/quick-start/).
 
-## Run the demo
+## Quick start
+
+```bash
+git clone https://github.com/gordonmurray/docker_compose_apache_doris.git
+cd docker_compose_apache_doris
+```
+
+To change ports or the network subnet, copy `.env.example` to `.env` and edit it
+before running the demo. See [Configuration](#configuration).
 
 ```bash
 ./scripts/demo.sh
 ```
 
-This starts one frontend, one backend and Kafka, waits for readiness, creates
-`kafka_topic` and `products.kafka_table`, starts a Routine Load job, and sends
-three sample messages. It waits until the corresponding prices can be queried:
+The script waits for healthy services, creates `kafka_topic` and
+`products.kafka_table`, starts the `products.kafka_fruit` Routine Load job, and
+sends three sample messages. It then queries their prices:
 
 ```text
 apples   0.60
@@ -54,44 +57,41 @@ bananas  0.30
 oranges  0.45
 ```
 
-The table uses a unique key on `fruit`, so repeating the demo updates the sample
-prices rather than adding duplicate rows. Prices use `DECIMAL(10,2)`.
-The job reads from the beginning of the Kafka topic on its first creation, so
-messages produced before the consumer starts are included.
+Rerunning the demo updates the sample rows using a unique key on `fruit`; prices
+use `DECIMAL(10,2)`. A new ingestion job reads the topic from the beginning.
+An existing paused job is resumed once services are ready, retaining its saved
+Kafka offsets. If it pauses again, inspect the cause before retrying.
 
-Running the demo also resumes its paused `products.kafka_fruit` job once all
-services are ready. Doris can pause the job while containers restart. Resuming
-retains its saved Kafka offsets; it does not recreate the job or reset the topic.
-The script makes one resume attempt, so persistent ingestion errors still need
-to be investigated. To leave a job paused, start only the services instead.
-
-To start just the services:
+To start only the services, leaving any paused ingestion job paused:
 
 ```bash
 docker compose up -d --wait --wait-timeout 300
 ```
 
-## Connect and explore
+## Connect and query
 
-| Interface | Address |
+| Interface | Default address |
 | --- | --- |
 | Doris Web UI | <http://localhost:8030> |
 | MySQL protocol | `127.0.0.1:9030` |
-| Kafka, within the Compose network | `kafka:9092` |
+| Kafka, inside the Compose network | `kafka:9092` |
 
-Doris uses `root` with an empty password for this local demo. Published ports bind
-to `127.0.0.1`. Kafka and BE ports are available only inside the Docker network.
-This configuration is intended for local experimentation.
+This local setup uses Doris user `root` with an empty password. Published ports
+bind to `127.0.0.1`; Kafka and backend ports remain inside the Docker network.
+
+Open a SQL session using the bundled client:
 
 ```bash
-# Use the client already included in the frontend image.
 docker compose exec fe mysql -h127.0.0.1 -P9030 -uroot
+```
 
-# Or use an installed MySQL client on the host.
+Or connect with a MySQL client installed on your host:
+
+```bash
 mysql -h127.0.0.1 -P9030 -uroot
 ```
 
-Try these queries:
+Run these queries in either SQL session:
 
 ```sql
 SHOW FRONTENDS;
@@ -100,7 +100,7 @@ SELECT * FROM products.kafka_table ORDER BY fruit;
 SHOW ROUTINE LOAD FOR products.kafka_fruit;
 ```
 
-Send another message, then query again after a few seconds:
+From another terminal, send a message and query the table again after a few seconds:
 
 ```bash
 printf 'pears,0.75\n' | docker compose exec -T kafka \
@@ -108,9 +108,9 @@ printf 'pears,0.75\n' | docker compose exec -T kafka \
   --bootstrap-server kafka:9092 --topic kafka_topic
 ```
 
-The broker advertises `kafka:9092`, which is resolvable by the Doris containers.
-Use the bundled Kafka commands through `docker compose exec`; a host producer
-would need a separate external Kafka listener.
+Use Kafka commands through `docker compose exec`. The broker advertises
+`kafka:9092`, which is resolvable inside Docker; host producers would need a
+separate external listener.
 
 ## Verify the pipeline
 
@@ -118,20 +118,35 @@ would need a separate external Kafka listener.
 ./scripts/smoke-test.sh
 ```
 
-The smoke test runs the demo, checks FE and BE membership, produces a uniquely
-named message, waits for its exact price in Doris, and removes the test row.
-Polling is bounded and failures print cluster and Routine Load diagnostics.
+The smoke test runs the demo, checks frontend and backend membership, sends a
+unique message, verifies its price in Doris, and removes the test row.
 
-GitHub Actions validates both Compose configurations, checks the Bash scripts,
-and runs the default smoke test. It also recreates the containers without
-removing volumes, checks that the three sample rows survived, then tests ingestion
-again. The larger cluster is configuration-checked in CI; run its smoke test on
-a machine with enough memory.
+GitHub Actions validates both Compose configurations and shell scripts, then
+tests ingestion and data persistence after recreating the default containers.
+The larger cluster is configuration-checked in CI; run its smoke test on a
+machine with enough memory.
 
-## Optional three-frontend, three-backend cluster
+## Stop, restart or reset
 
-Stop the default project first to release its ports and subnet. Its volumes are
-retained. The larger configuration uses a separate project and separate volumes:
+Named volumes store Doris metadata, backend storage, logs and Kafka data.
+Stop and restart without deleting data:
+
+```bash
+docker compose down
+./scripts/demo.sh
+```
+
+To **delete all data in the default setup**:
+
+```bash
+docker compose down --volumes
+```
+
+## Optional larger cluster
+
+The larger configuration uses three frontends, three backends and three table
+replicas. It has a separate Compose project and volumes. Stop the default setup
+first to release the shared ports and subnet:
 
 ```bash
 docker compose down
@@ -139,9 +154,7 @@ docker compose down
 ./scripts/smoke-test.sh --cluster
 ```
 
-The larger demo creates the table with **three replicas** instead of one. This is
-still a single-machine learning environment. Run further commands with the same
-project name and both files:
+Use the same project name and both files for subsequent cluster commands:
 
 ```bash
 docker compose -p trying-doris-cluster \
@@ -152,58 +165,49 @@ docker compose -p trying-doris-cluster \
   exec fe mysql -h127.0.0.1 -P9030 -uroot
 ```
 
-To return to the default demo, stop the larger project with the same arguments
-and `down`, then run `./scripts/demo.sh`. Do not remove followers from a running
-cluster by merely switching Compose files: its persisted FE membership needs its
-quorum. The separate project names keep these two experiments independent.
-
-## Configuration and data
-
-Optionally copy `.env.example` to `.env` to change the image versions, host ports
-or network prefix. Choose an unused private `/24` subnet before the first start.
-The Doris entrypoints register nodes by IP, so changing that subnet with existing
-metadata is not supported by this demo; use fresh volumes for a different subnet.
-
-The mounted files in `fe/conf` and `be/conf` contain small configuration overrides.
-`scripts/start-doris.sh` applies these to the image's writable configuration and
-reduces JVM heaps while retaining the release's other Java options. The official
-entrypoints handle node registration and derive the matching network settings.
-Restart the services after changing configuration files.
-
-Doris metadata, backend storage, logs and Kafka data use named Docker volumes.
-Stopping and recreating containers preserves them:
-
-```bash
-docker compose down
-./scripts/demo.sh
-```
-
-For an intentional **reset that deletes all data in the default demo**:
-
-```bash
-docker compose down --volumes
-```
-
-To delete the larger demo's data, use its explicit project and both Compose files:
+To stop the larger cluster and return to the default setup:
 
 ```bash
 docker compose -p trying-doris-cluster \
-  -f docker-compose.yml -f docker-compose.cluster.yml down --volumes
+  -f docker-compose.yml -f docker-compose.cluster.yml down
+./scripts/demo.sh
 ```
 
-These commands do not touch the old 2023 setup's `/data/...` bind-mounted files.
-This refresh starts a new demo; it does not migrate a 2.0-alpha database. Preserve
-any old data separately and follow the
-[official upgrade guidance](https://doris.apache.org/docs/4.x/admin-manual/cluster-management/upgrade/)
-if it needs to be retained.
+Add `--volumes` to the larger cluster's `down` command only to delete its data.
+Keep the projects separate: removing frontends from a persisted cluster by
+switching Compose files can prevent it from reaching quorum.
+
+## Configuration
+
+[`.env.example`](.env.example) contains the image versions, host ports and network
+prefix. Copy it to `.env` to override the defaults. Choose an unused private `/24`
+subnet before the first start. Doris registers nodes by IP, so changing the
+subnet requires fresh volumes in this demo.
+
+[`fe/conf/fe.conf`](fe/conf/fe.conf) and [`be/conf/be.conf`](be/conf/be.conf)
+contain configuration overrides. The startup script applies them to the image's
+configuration while preserving its Java options and setting smaller JVM heaps.
+Restart the services after editing these files.
+
+The original 2023 setup used `/data/...` bind mounts and Doris 2.0-alpha.
+This setup uses fresh named volumes and does not migrate or delete those old
+files. If you need to retain an old database, follow the
+[official upgrade guidance](https://doris.apache.org/docs/4.x/admin-manual/cluster-management/upgrade/).
 
 ## Troubleshooting
 
-- Inspect `docker compose ps --all` and `docker compose logs --tail=100` if startup
-  fails. Check the host's `vm.max_map_count`, available memory and AVX2 support.
-- FE and BE logs are also inside their containers under
-  `/opt/apache-doris/fe/log` and `/opt/apache-doris/be/log`.
-- If Routine Load pauses, inspect `SHOW ROUTINE LOAD FOR products.kafka_fruit;` for its
-  reason, fix the cause, then use `RESUME ROUTINE LOAD FOR products.kafka_fruit;`.
-- A timeout can be rerun after fixing the underlying problem. The scripts leave
-  containers and data in place for inspection; they never reset volumes for you.
+```bash
+docker compose ps --all
+docker compose logs --tail=100
+```
+
+- For startup failures, check memory, `vm.max_map_count` and AVX2 support on AMD64.
+- Doris logs are in `/opt/apache-doris/fe/log` and `/opt/apache-doris/be/log`
+  inside the corresponding containers.
+- For a paused ingestion job, inspect `SHOW ROUTINE LOAD FOR products.kafka_fruit;`,
+  fix the reported cause, then run `RESUME ROUTINE LOAD FOR products.kafka_fruit;`.
+- A timeout leaves containers and data available for inspection. Fix the cause
+  and rerun the script; it never resets volumes automatically.
+
+Originally inspired by
+[Empowering cyber security by enabling seven times faster log analysis](https://doris.apache.org/blog/empowering-cyber-security-by-enabling-seven-times-faster-log-analysis).
