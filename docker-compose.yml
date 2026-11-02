@@ -86,6 +86,9 @@ services:
       KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
     volumes:
       - kafka-data:/var/lib/kafka/data
+    networks:
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.8
     healthcheck:
       test: [CMD, /opt/kafka/bin/kafka-topics.sh, --bootstrap-server, kafka:9092, --list]
       interval: 10s
