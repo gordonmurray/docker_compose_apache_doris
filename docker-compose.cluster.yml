@@ -1,0 +1,78 @@
+# Use with docker-compose.yml, in a separate Compose project. See README.md.
+services:
+  fe2:
+    extends:
+      file: docker-compose.yml
+      service: fe
+    hostname: fe2
+    environment:
+      FE_SERVERS: fe1:${DORIS_NETWORK_PREFIX:-172.20.80}.2:9010,fe2:${DORIS_NETWORK_PREFIX:-172.20.80}.3:9010,fe3:${DORIS_NETWORK_PREFIX:-172.20.80}.4:9010
+      FE_ID: "2"
+    ports: !reset []
+    depends_on:
+      fe:
+        # Allow all persisted FE members to start and regain quorum together.
+        condition: service_started
+    volumes:
+      - fe2-meta:/opt/apache-doris/fe/doris-meta
+      - fe2-log:/opt/apache-doris/fe/log
+    networks:
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.3
+
+  fe3:
+    extends:
+      file: docker-compose.yml
+      service: fe
+    hostname: fe3
+    environment:
+      FE_SERVERS: fe1:${DORIS_NETWORK_PREFIX:-172.20.80}.2:9010,fe2:${DORIS_NETWORK_PREFIX:-172.20.80}.3:9010,fe3:${DORIS_NETWORK_PREFIX:-172.20.80}.4:9010
+      FE_ID: "3"
+    ports: !reset []
+    depends_on:
+      fe2:
+        condition: service_started
+    volumes:
+      - fe3-meta:/opt/apache-doris/fe/doris-meta
+      - fe3-log:/opt/apache-doris/fe/log
+    networks:
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.4
+
+  be2:
+    extends:
+      file: docker-compose.yml
+      service: be
+    hostname: be2
+    environment:
+      BE_ADDR: ${DORIS_NETWORK_PREFIX:-172.20.80}.6:9050
+    volumes:
+      - be2-storage:/opt/apache-doris/be/storage
+      - be2-log:/opt/apache-doris/be/log
+    networks:
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.6
+
+  be3:
+    extends:
+      file: docker-compose.yml
+      service: be
+    hostname: be3
+    environment:
+      BE_ADDR: ${DORIS_NETWORK_PREFIX:-172.20.80}.7:9050
+    volumes:
+      - be3-storage:/opt/apache-doris/be/storage
+      - be3-log:/opt/apache-doris/be/log
+    networks:
+      default:
+        ipv4_address: ${DORIS_NETWORK_PREFIX:-172.20.80}.7
+
+volumes:
+  fe2-meta:
+  fe2-log:
+  fe3-meta:
+  fe3-log:
+  be2-storage:
+  be2-log:
+  be3-storage:
+  be3-log:
